@@ -281,6 +281,7 @@ pub fn get_stacked_srs_key<Tree: 'static + MerkleTreeTrait>(
     )?)
 }
 
+/*
 pub fn get_post_srs_key<Tree: 'static + MerkleTreeTrait>(
     post_config: &PoStConfig,
     num_proofs_to_aggregate: usize,
@@ -333,3 +334,4 @@ pub fn get_post_srs_key<Tree: 'static + MerkleTreeTrait>(
         }
     }
 }
+*/

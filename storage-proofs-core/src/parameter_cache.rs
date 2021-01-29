@@ -12,6 +12,7 @@ use fs2::FileExt;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use log::info;
+use memmap::MmapOptions;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -23,7 +24,7 @@ use crate::{
 
 /// Bump this when circuits change to invalidate the cache.
 pub const VERSION: usize = 28;
-pub const SRS_MAX_PROOFS_TO_AGGREGATE: usize = 1024; // FIXME: placeholder value
+pub const SRS_MAX_PROOFS_TO_AGGREGATE: usize = 65536; // FIXME: placeholder value
 
 pub const GROTH_PARAMETER_EXT: &str = "params";
 pub const PARAMETER_METADATA_EXT: &str = "meta";
@@ -470,8 +471,9 @@ fn read_cached_srs_key(cache_entry_path: &PathBuf) -> io::Result<groth16::SRS<Bl
     info!("checking cache_path: {:?} for srs", cache_entry_path);
 
     // FIXME: add srs parameters to manifest and verify them if specified
-    with_exclusive_read_lock(cache_entry_path, |mut file| {
-        let key = groth16::SRS::read(&mut file)?;
+    with_exclusive_read_lock(cache_entry_path, |file| {
+        let srs_map = unsafe { MmapOptions::new().map(file.as_ref())? };
+        let key = groth16::SRS::read_mmap(&srs_map)?;
         info!("read srs key from cache {:?} ", cache_entry_path);
 
         Ok(key)

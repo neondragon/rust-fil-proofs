@@ -9,7 +9,7 @@ use bellperson::{
 use lazy_static::lazy_static;
 use log::info;
 use rand::rngs::OsRng;
-use storage_proofs_core::{compound_proof::CompoundProof, merkle::MerkleTreeTrait, parameter_cache::SRS_MAX_PROOFS_TO_AGGREGATE};
+use storage_proofs_core::{compound_proof::CompoundProof, merkle::MerkleTreeTrait};
 use storage_proofs_porep::stacked::{StackedCompound, StackedDrg};
 use storage_proofs_post::fallback::{FallbackPoSt, FallbackPoStCircuit, FallbackPoStCompound};
 

@@ -10,6 +10,7 @@ use filecoin_hashers::{Domain, Hasher};
 use log::{info, trace};
 use memmap::MmapOptions;
 use merkletree::store::{DiskStore, Store, StoreConfig};
+use rayon::prelude::*;
 use storage_proofs_core::{
     cache_key::CacheKey,
     compound_proof::{self, CompoundProof},
@@ -17,12 +18,12 @@ use storage_proofs_core::{
     measurements::{measure_op, Operation},
     merkle::{create_base_merkle_tree, BinaryMerkleTree, MerkleTreeTrait},
     multi_proof::MultiProof,
+    parameter_cache::SRS_MAX_PROOFS_TO_AGGREGATE,
     proof::ProofScheme,
     sector::SectorId,
     util::default_rows_to_discard,
     Data,
 };
-use rayon::prelude::*;
 use storage_proofs_porep::stacked::{
     self, generate_replica_id, ChallengeRequirements, StackedCompound, StackedDrg, Tau,
     TemporaryAux, TemporaryAuxCache,
@@ -30,7 +31,7 @@ use storage_proofs_porep::stacked::{
 
 use crate::{
     api::{as_safe_commitment, commitment_from_fr, get_base_tree_leafs, get_base_tree_size},
-    caches::{get_stacked_params, get_stacked_verifying_key},
+    caches::{get_stacked_params, get_stacked_srs_key, get_stacked_verifying_key},
     constants::{
         DefaultBinaryTree, DefaultPieceDomain, DefaultPieceHasher, POREP_MINIMUM_CHALLENGES,
         SINGLE_PARTITION_PROOF_LEN,
@@ -38,9 +39,9 @@ use crate::{
     parameters::setup_params,
     pieces::{self, verify_pieces},
     types::{
-        AggregateSnarkProof, Commitment, PaddedBytesAmount, PieceInfo, PoRepConfig, PoRepProofPartitions, ProverId,
-        SealCommitOutput, SealCommitPhase1Output, SealPreCommitOutput, SealPreCommitPhase1Output,
-        SectorSize, Ticket, BINARY_ARITY,
+        AggregateSnarkProof, Commitment, PaddedBytesAmount, PieceInfo, PoRepConfig,
+        PoRepProofPartitions, ProverId, SealCommitOutput, SealCommitPhase1Output,
+        SealPreCommitOutput, SealPreCommitPhase1Output, SectorSize, Ticket, BINARY_ARITY,
     },
 };
 
@@ -651,7 +652,7 @@ pub fn aggregate_seal_commit_proofs<Tree: 'static + MerkleTreeTrait>(
     porep_config: PoRepConfig,
     commit_outputs: &[SealCommitOutput],
 ) -> Result<AggregateSnarkProof> {
-    info!("aggregated_seal_commit_proofs:start");
+    info!("aggregate_seal_commit_proofs:start");
 
     ensure!(commit_outputs.len() > 1, "cannot aggregate a single proof");
     ensure!(
@@ -687,7 +688,7 @@ pub fn aggregate_seal_commit_proofs<Tree: 'static + MerkleTreeTrait>(
         StackedCompound::<Tree, DefaultPieceHasher>::aggregate_proofs(&srs, proofs.as_slice())?;
     let aggregate_proof_bytes = serialize(&aggregate_proof)?;
 
-    info!("aggregated_seal_commit_proofs:finish");
+    info!("aggregate_seal_commit_proofs:finish");
 
     Ok(aggregate_proof_bytes)
 }

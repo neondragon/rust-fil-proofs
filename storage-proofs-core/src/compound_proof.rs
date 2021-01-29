@@ -2,7 +2,8 @@ use anyhow::{ensure, Context};
 use bellperson::{
     bls::{Bls12, Fr},
     groth16::{
-        self, create_random_proof_batch, create_random_proof_batch_in_priority, verify_proofs_batch,
+        self, aggregate_proofs, create_random_proof_batch, create_random_proof_batch_in_priority,
+        verify_aggregate_proof, verify_proofs_batch, PreparedVerifyingKey,
     },
     Circuit,
 };

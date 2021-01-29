@@ -9,20 +9,20 @@ use bellperson::bls::Fr;
 use ff::Field;
 use filecoin_hashers::Hasher;
 use filecoin_proofs::{
-    add_piece, clear_cache, compute_comm_d, fauxrep_aux, generate_fallback_sector_challenges,
-    generate_piece_commitment, generate_single_vanilla_proof, generate_window_post,
-    generate_window_post_with_vanilla, generate_winning_post,
+    add_piece, aggregate_seal_commit_proofs, clear_cache, compute_comm_d, fauxrep_aux,
+    generate_fallback_sector_challenges, generate_piece_commitment, generate_single_vanilla_proof,
+    generate_window_post, generate_window_post_with_vanilla, generate_winning_post,
     generate_winning_post_sector_challenge, generate_winning_post_with_vanilla, seal_commit_phase1,
-    seal_commit_phase2, seal_pre_commit_phase1, seal_pre_commit_phase2, unseal_range,
-    validate_cache_for_commit, validate_cache_for_precommit_phase2, verify_seal,
-    verify_window_post, verify_winning_post, Commitment, DefaultTreeDomain, MerkleTreeTrait,
-    PaddedBytesAmount, PieceInfo, PoRepConfig, PoRepProofPartitions, PoStConfig, PoStType,
-    PrivateReplicaInfo, ProverId, PublicReplicaInfo, SealPreCommitOutput,
-    SealPreCommitPhase1Output, SectorShape16KiB, SectorShape2KiB, SectorShape32KiB,
-    SectorShape4KiB, SectorSize, UnpaddedByteIndex, UnpaddedBytesAmount, POREP_PARTITIONS,
-    SECTOR_SIZE_16_KIB, SECTOR_SIZE_2_KIB, SECTOR_SIZE_32_KIB, SECTOR_SIZE_4_KIB,
-    WINDOW_POST_CHALLENGE_COUNT, WINDOW_POST_SECTOR_COUNT, WINNING_POST_CHALLENGE_COUNT,
-    WINNING_POST_SECTOR_COUNT,
+    seal_commit_phase2_for_aggregation, seal_pre_commit_phase1, seal_pre_commit_phase2,
+    unseal_range, validate_cache_for_commit, validate_cache_for_precommit_phase2,
+    verify_aggregate_seal_commit_proofs, verify_seal, verify_window_post, verify_winning_post,
+    Commitment, DefaultTreeDomain, MerkleTreeTrait, PaddedBytesAmount, PieceInfo, PoRepConfig,
+    PoRepProofPartitions, PoStConfig, PoStType, PrivateReplicaInfo, ProverId, PublicReplicaInfo,
+    SealCommitOutput, SealPreCommitOutput, SealPreCommitPhase1Output, SectorShape16KiB,
+    SectorShape2KiB, SectorShape32KiB, SectorShape4KiB, SectorSize, UnpaddedByteIndex,
+    UnpaddedBytesAmount, POREP_PARTITIONS, SECTOR_SIZE_16_KIB, SECTOR_SIZE_2_KIB,
+    SECTOR_SIZE_32_KIB, SECTOR_SIZE_4_KIB, WINDOW_POST_CHALLENGE_COUNT, WINDOW_POST_SECTOR_COUNT,
+    WINNING_POST_CHALLENGE_COUNT, WINNING_POST_SECTOR_COUNT,
 };
 use rand::{random, Rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
@@ -238,6 +238,65 @@ fn test_seal_proof_aggregation_8_2kib_porep_id_v1_1_base_8() -> Result<()> {
     Ok(())
 }
 
+#[test]
+#[ignore]
+fn test_seal_proof_aggregation_1024_2kib_porep_id_v1_1_base_8() -> Result<()> {
+    let proofs_to_aggregate = 1024;
+    inner_test_seal_proof_aggregation_2kib_porep_id_v1_1_base_8(proofs_to_aggregate)
+}
+
+#[test]
+#[ignore]
+fn test_seal_proof_aggregation_65536_2kib_porep_id_v1_1_base_8() -> Result<()> {
+    let proofs_to_aggregate = 65536;
+    inner_test_seal_proof_aggregation_2kib_porep_id_v1_1_base_8(proofs_to_aggregate)
+}
+
+fn inner_test_seal_proof_aggregation_2kib_porep_id_v1_1_base_8(
+    proofs_to_aggregate: usize,
+) -> Result<()> {
+    let porep_id_v1_1: u64 = 5; // This is a RegisteredSealProof value
+
+    let mut porep_id = [0u8; 32];
+    porep_id[..8].copy_from_slice(&porep_id_v1_1.to_le_bytes());
+    assert!(!is_legacy_porep_id(porep_id));
+
+    let rng = &mut XorShiftRng::from_seed(TEST_SEED);
+    let prover_fr: DefaultTreeDomain = Fr::random(rng).into();
+    let mut prover_id = [0u8; 32];
+    prover_id.copy_from_slice(AsRef::<[u8]>::as_ref(&prover_fr));
+
+    let mut commit_outputs = Vec::with_capacity(proofs_to_aggregate);
+    let mut commit_inputs = Vec::with_capacity(proofs_to_aggregate);
+
+    let (commit_output, commit_input) = create_seal_for_aggregation::<_, SectorShape2KiB>(
+        rng,
+        SECTOR_SIZE_2_KIB,
+        prover_id,
+        &porep_id,
+        ApiVersion::V1_1_0,
+    )?;
+
+    // duplicate a single proof to desired target for aggregation
+    for _ in 0..proofs_to_aggregate {
+        commit_outputs.push(commit_output.clone());
+        commit_inputs.extend(commit_input.clone());
+    }
+
+    let config = porep_config(SECTOR_SIZE_2_KIB, porep_id, ApiVersion::V1_1_0);
+    let aggregate_proof =
+        aggregate_seal_commit_proofs::<SectorShape2KiB>(config, commit_outputs.as_slice())?;
+    let verified = verify_aggregate_seal_commit_proofs::<SectorShape2KiB>(
+        config,
+        proofs_to_aggregate,
+        aggregate_proof,
+        commit_inputs,
+    )?;
+    assert!(verified);
+
+    Ok(())
+}
+
 fn aggregate_proofs<Tree: 'static + MerkleTreeTrait>(
     sector_size: u64,
     porep_id: &[u8; 32],
@@ -274,7 +333,7 @@ fn aggregate_proofs<Tree: 'static + MerkleTreeTrait>(
 }
 
 fn get_layer_file_paths(cache_dir: &tempfile::TempDir) -> Vec<PathBuf> {
-    let mut list: Vec<_> = fs::read_dir(&cache_dir)
+    let mut list: Vec<_> = read_dir(&cache_dir)
         .expect(&format!("failed to read directory {:?}", cache_dir))
         .filter_map(|entry| {
             let cur = entry.expect("reading directory failed");
@@ -1274,9 +1333,6 @@ fn create_seal<R: Rng, Tree: 'static + MerkleTreeTrait>(
     Ok((sector_id, sealed_sector_file, comm_r, cache_dir))
 }
 
-<<<<<<< HEAD
-fn create_fake_seal<R: Rng, Tree: 'static + MerkleTreeTrait>(
-=======
 fn create_seal_for_aggregation<R: Rng, Tree: 'static + MerkleTreeTrait>(
     rng: &mut R,
     sector_size: u64,
@@ -1328,7 +1384,6 @@ fn create_seal_for_aggregation<R: Rng, Tree: 'static + MerkleTreeTrait>(
 }
 
 fn create_fake_seal<R: rand::Rng, Tree: 'static + MerkleTreeTrait>(
->>>>>>> ed200441... feat: add seal proof aggregation api
     mut rng: &mut R,
     sector_size: u64,
     porep_id: &[u8; 32],

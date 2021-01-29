@@ -18,8 +18,8 @@ use crate::{
     caches::{get_post_params, get_post_verifying_key},
     parameters::window_post_setup_params,
     types::{
-        AggregateSnarkProof, ChallengeSeed, FallbackPoStSectorProof, PoStConfig, PrivateReplicaInfo, ProverId,
-        PublicReplicaInfo, SnarkProof,
+        AggregateSnarkProof, ChallengeSeed, FallbackPoStSectorProof, PoStConfig,
+        PrivateReplicaInfo, ProverId, PublicReplicaInfo, SnarkProof,
     },
     PoStType,
 };
